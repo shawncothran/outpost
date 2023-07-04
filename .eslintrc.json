@@ -1,0 +1,7 @@
+{
+  "env": {
+    "googleappsscript/googleappsscript": true
+  },
+  "extends": ["eslint:recommended", "google"],
+  "plugins": ["googleappsscript"]
+}
