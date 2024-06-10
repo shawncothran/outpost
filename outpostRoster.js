@@ -1,21 +1,21 @@
 function createDropdowns() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var staffRosterSheet = ss.getSheetByName("Staff Roster");
-  var patrolRosterSheet = ss.getSheetByName("Patrol Roster");
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const staffRosterSheet = ss.getSheetByName("Staff Roster");
+  const patrolRosterSheet = ss.getSheetByName("Patrol Roster");
 
-  var scoutsRange = patrolRosterSheet.getRange(
+  const scoutsRange = patrolRosterSheet.getRange(
     "B2:I" + patrolRosterSheet.getLastRow()
   );
-  var scoutsValues = scoutsRange
+  const scoutsValues = scoutsRange
     .getValues()
     .flat()
     .filter((name) => name);
 
-  scoutsValues.sort(function (a, b) {
-    var aNames = a.split(" ");
-    var bNames = b.split(" ");
-    var aLastName = aNames[aNames.length - 1];
-    var bLastName = bNames[bNames.length - 1];
+  scoutsValues.sort((a, b) => {
+    const aNames = a.split(" ");
+    const bNames = b.split(" ");
+    const aLastName = aNames[aNames.length - 1];
+    const bLastName = bNames[bNames.length - 1];
 
     if (aLastName === bLastName) {
       return aNames[0].localeCompare(bNames[0]);
@@ -23,22 +23,22 @@ function createDropdowns() {
     return aLastName.localeCompare(bLastName);
   });
 
-  var childrenColumn = staffRosterSheet.getRange(
+  const childrenColumn = staffRosterSheet.getRange(
     "B2:B" + staffRosterSheet.getLastRow()
   );
-  var rule = SpreadsheetApp.newDataValidation()
+  const rule = SpreadsheetApp.newDataValidation()
     .requireValueInList(scoutsValues)
     .build();
   childrenColumn.setDataValidation(rule);
 }
 
 function onEdit(e) {
-  var ss = e.source;
-  var sheet = ss.getActiveSheet();
+  const ss = e.source;
+  const sheet = ss.getActiveSheet();
 
   if (sheet.getName() === "Staff Roster" && e.range.getColumn() === 2) {
-    var currentValue = e.range.getValue();
-    var oldValue = e.oldValue;
+    const currentValue = e.range.getValue();
+    const oldValue = e.oldValue;
 
     if (oldValue && currentValue !== oldValue && currentValue !== "") {
       e.range.setValue(oldValue + ", " + currentValue);
@@ -48,67 +48,20 @@ function onEdit(e) {
 
 function autoPopulate() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-
   const staffRosterSheet = ss.getSheetByName("Staff Roster");
   const patrolRosterSheet = ss.getSheetByName("Patrol Roster");
   const referenceDataSheet = ss.getSheetByName("Reference Data");
 
-  const staffNames = staffRosterSheet
-    .getRange("A2:A" + staffRosterSheet.getLastRow())
-    .getValues()
-    .flat();
-  const childrenData = staffRosterSheet
-    .getRange("B2:B" + staffRosterSheet.getLastRow())
-    .getValues();
-
-  const staffWithChildren = staffNames.reduce((acc, name, index) => {
-    const children = childrenData[index][0];
-    acc.push({
-      name,
-      children: children
-        ? children.split(", ").map((child) => child.trim())
-        : [],
-    });
-    return acc;
-  }, []);
-
-  shuffle(staffWithChildren);
-
-  const meals = referenceDataSheet
-    .getRange("A2:A" + getLastRowInColumn(referenceDataSheet, "A"))
-    .getValues()
-    .flat()
-    .filter(String);
-  const staffRoles = referenceDataSheet
-    .getRange("B2:B" + getLastRowInColumn(referenceDataSheet, "B"))
-    .getValues()
-    .flat()
-    .filter(String);
-  const scoutRoles = referenceDataSheet
-    .getRange("C2:C" + getLastRowInColumn(referenceDataSheet, "C"))
-    .getValues()
-    .flat()
-    .filter(String);
-  const latrineDays = referenceDataSheet
-    .getRange("D2:D" + getLastRowInColumn(referenceDataSheet, "D"))
-    .getValues()
-    .flat()
-    .filter(String);
-  const excludedStaff = referenceDataSheet
-    .getRange("E2:E" + getLastRowInColumn(referenceDataSheet, "E"))
-    .getValues()
-    .flat()
-    .filter(String);
-  const eatingOnlyStaff = referenceDataSheet
-    .getRange("F2:F" + getLastRowInColumn(referenceDataSheet, "F"))
-    .getValues()
-    .flat()
-    .filter(String);
-  const patrolNames = referenceDataSheet
-    .getRange("G2:G" + getLastRowInColumn(referenceDataSheet, "G"))
-    .getValues()
-    .flat()
-    .filter(String);
+  const staffWithChildren = getStaffWithChildren(staffRosterSheet);
+  const meals = getColumnValues(referenceDataSheet, "A");
+  const staffRoles = getColumnValues(referenceDataSheet, "B");
+  const scoutRoles = getColumnValues(referenceDataSheet, "C");
+  const latrineDays = getColumnValues(referenceDataSheet, "D").filter(String);
+  const excludedStaff = getColumnValues(referenceDataSheet, "E").filter(String);
+  const eatingOnlyStaff = getColumnValues(referenceDataSheet, "F").filter(
+    String
+  );
+  const patrolNames = getColumnValues(referenceDataSheet, "G").filter(String);
 
   const validStaff = staffWithChildren.filter(
     (staff) => !excludedStaff.includes(staff.name)
@@ -142,7 +95,69 @@ function autoPopulate() {
     }
   });
 
-  // Populate Eating Schedule
+  populateEatingSchedule(
+    eatingScheduleSheet,
+    meals,
+    patrolNames,
+    validStaff,
+    eatingOnlyStaff
+  );
+  populateStaffDutyRoster(
+    staffDutyRosterSheet,
+    meals,
+    staffRoles,
+    validStaffForDuties
+  );
+  populatePatrolDutyRosters(
+    patrolNames,
+    patrolRosterSheet,
+    meals,
+    scoutRoles,
+    staffRoles
+  );
+  populateLatrineDuty(
+    latrineDutySheet,
+    latrineDays,
+    patrolNames,
+    validStaffForDuties
+  );
+}
+
+function getStaffWithChildren(staffRosterSheet) {
+  const staffNames = staffRosterSheet
+    .getRange("A2:A" + staffRosterSheet.getLastRow())
+    .getValues()
+    .flat();
+  const childrenData = staffRosterSheet
+    .getRange("B2:B" + staffRosterSheet.getLastRow())
+    .getValues();
+
+  return staffNames.reduce((acc, name, index) => {
+    const children = childrenData[index][0];
+    acc.push({
+      name,
+      children: children
+        ? children.split(", ").map((child) => child.trim())
+        : [],
+    });
+    return acc;
+  }, []);
+}
+
+function getColumnValues(sheet, column) {
+  return sheet
+    .getRange(column + "2:" + column + getLastRowInColumn(sheet, column))
+    .getValues()
+    .flat();
+}
+
+function populateEatingSchedule(
+  sheet,
+  meals,
+  patrolNames,
+  validStaff,
+  eatingOnlyStaff
+) {
   const eatingData = [];
   const eatingHeaders = ["Day/Meal", ...patrolNames];
   eatingData.push(eatingHeaders);
@@ -202,11 +217,17 @@ function autoPopulate() {
   });
 
   Logger.log("Eating Data Populated: " + JSON.stringify(eatingData));
-  eatingScheduleSheet
+  sheet
     .getRange(1, 1, eatingData.length, eatingData[0].length)
     .setValues(eatingData);
+}
 
-  // Populate Staff Duty Roster
+function populateStaffDutyRoster(
+  sheet,
+  meals,
+  staffRoles,
+  validStaffForDuties
+) {
   const staffDutyData = [];
   const staffDutyHeaders = [
     "Day/Meal",
@@ -222,6 +243,8 @@ function autoPopulate() {
     acc[staff.name] = 0;
     return acc;
   }, {});
+
+  shuffle(validStaffForDuties); // Shuffle to randomize staff assignment
 
   meals.forEach((meal) => {
     const row = [meal];
@@ -239,14 +262,23 @@ function autoPopulate() {
   });
 
   Logger.log("Staff Duty Data Populated: " + JSON.stringify(staffDutyData));
-  staffDutyRosterSheet
+  sheet
     .getRange(1, 1, staffDutyData.length, staffDutyData[0].length)
     .setValues(staffDutyData);
+}
 
-  // Populate Patrol Duty Rosters
+function populatePatrolDutyRosters(
+  patrolNames,
+  patrolRosterSheet,
+  meals,
+  scoutRoles,
+  staffRoles
+) {
   patrolNames.forEach((patrolName) => {
     if (!patrolName.toLowerCase().includes("aspl")) {
-      const patrolSheet = ss.getSheetByName(patrolName + " Duty Roster");
+      const patrolSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+        patrolName + " Duty Roster"
+      );
       const patrolData = [];
       const patrolColumnIndex =
         patrolRosterSheet
@@ -282,8 +314,16 @@ function autoPopulate() {
         .setValues(patrolData);
     }
   });
+}
 
+function populateLatrineDuty(
+  sheet,
+  latrineDays,
+  patrolNames,
+  validStaffForDuties
+) {
   const latrineData = [["Day", "Patrol", "Staff"]];
+  shuffle(validStaffForDuties); // Shuffle to randomize staff assignment
   shuffle(patrolNames);
 
   latrineDays.forEach((day, index) => {
@@ -296,67 +336,166 @@ function autoPopulate() {
   });
 
   Logger.log("Latrine Data Populated: " + JSON.stringify(latrineData));
-  latrineDutySheet
+  sheet
     .getRange(1, 1, latrineData.length, latrineData[0].length)
     .setValues(latrineData);
+}
 
-  function getNextAvailableStaff(
+function getNextAvailableStaff(
+  validStaff,
+  eatingOnlyStaff,
+  mealCount,
+  patrolAssignment,
+  assignedPairs,
+  staffPairAssignments
+) {
+  const availableStaff = validStaff.filter(
+    (staff) =>
+      !eatingOnlyStaff.includes(staff.name) &&
+      !patrolAssignment.includes(staff.name)
+  );
+  const minMeals = Math.min(
+    ...availableStaff.map((staff) => mealCount[staff.name])
+  );
+
+  for (const staff of availableStaff) {
+    if (mealCount[staff.name] === minMeals) {
+      const isPairAssigned = staffPairAssignments.some(
+        (pair) => pair.includes(staff.name) && pair.includes(assignedPairs[0])
+      );
+      if (!isPairAssigned) {
+        return staff;
+      }
+    }
+  }
+  return null;
+}
+
+function getNextAvailableStaffForDuties(validStaffForDuties, dutyCount) {
+  const minDuties = Math.min(
+    ...validStaffForDuties.map((staff) => dutyCount[staff.name])
+  );
+  return (
+    validStaffForDuties.find((staff) => dutyCount[staff.name] === minDuties) ||
+    null
+  );
+}
+
+function getLastRowInColumn(sheet, column) {
+  const data = sheet
+    .getRange(`${column}1:${column}${sheet.getMaxRows()}`)
+    .getValues();
+  for (let i = data.length - 1; i >= 0; i--) {
+    if (data[i][0]) {
+      return i + 1;
+    }
+  }
+  return 0;
+}
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+
+function runPopulateEatingSchedule() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const eatingScheduleSheet = ss.getSheetByName("Staff Patrol Eating Schedule");
+  const referenceDataSheet = ss.getSheetByName("Reference Data");
+  const staffRosterSheet = ss.getSheetByName("Staff Roster");
+
+  const staffWithChildren = getStaffWithChildren(staffRosterSheet);
+  const meals = getColumnValues(referenceDataSheet, "A");
+  const excludedStaff = getColumnValues(referenceDataSheet, "E").filter(String);
+  const eatingOnlyStaff = getColumnValues(referenceDataSheet, "F").filter(
+    String
+  );
+  const patrolNames = getColumnValues(referenceDataSheet, "G").filter(String);
+
+  const validStaff = staffWithChildren.filter(
+    (staff) => !excludedStaff.includes(staff.name)
+  );
+
+  populateEatingSchedule(
+    eatingScheduleSheet,
+    meals,
+    patrolNames,
     validStaff,
-    eatingOnlyStaff,
-    mealCount,
-    patrolAssignment,
-    assignedPairs,
-    staffPairAssignments
-  ) {
-    const availableStaff = validStaff.filter(
-      (staff) =>
-        !eatingOnlyStaff.includes(staff.name) &&
-        !patrolAssignment.includes(staff.name)
-    );
-    const minMeals = Math.min(
-      ...availableStaff.map((staff) => mealCount[staff.name])
-    );
+    eatingOnlyStaff
+  );
+}
 
-    for (const staff of availableStaff) {
-      if (mealCount[staff.name] === minMeals) {
-        const isPairAssigned = staffPairAssignments.some(
-          (pair) => pair.includes(staff.name) && pair.includes(assignedPairs[0])
-        );
-        if (!isPairAssigned) {
-          return staff;
-        }
-      }
-    }
-    return null;
-  }
+function runPopulateLatrineDuty() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const latrineDutySheet = ss.getSheetByName("Latrine Duty");
+  const referenceDataSheet = ss.getSheetByName("Reference Data");
+  const staffRosterSheet = ss.getSheetByName("Staff Roster");
 
-  function getNextAvailableStaffForDuties(validStaffForDuties, dutyCount) {
-    const minDuties = Math.min(
-      ...validStaffForDuties.map((staff) => dutyCount[staff.name])
-    );
-    return (
-      validStaffForDuties.find(
-        (staff) => dutyCount[staff.name] === minDuties
-      ) || null
-    );
-  }
+  const staffWithChildren = getStaffWithChildren(staffRosterSheet);
+  const latrineDays = getColumnValues(referenceDataSheet, "D").filter(String);
+  const excludedStaff = getColumnValues(referenceDataSheet, "E").filter(String);
+  const patrolNames = getColumnValues(referenceDataSheet, "G").filter(String);
 
-  function getLastRowInColumn(sheet, column) {
-    const data = sheet
-      .getRange(`${column}1:${column}${sheet.getMaxRows()}`)
-      .getValues();
-    for (let i = data.length - 1; i >= 0; i--) {
-      if (data[i][0]) {
-        return i + 1;
-      }
-    }
-    return 0;
-  }
+  const validStaff = staffWithChildren.filter(
+    (staff) => !excludedStaff.includes(staff.name)
+  );
+  const validStaffForDuties = validStaff.filter(
+    (staff) =>
+      !getColumnValues(referenceDataSheet, "F")
+        .filter(String)
+        .includes(staff.name)
+  );
 
-  function shuffle(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-  }
+  populateLatrineDuty(
+    latrineDutySheet,
+    latrineDays,
+    patrolNames,
+    validStaffForDuties
+  );
+}
+
+function runPopulateStaffDutyRoster() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const staffDutyRosterSheet = ss.getSheetByName("Staff Duty Roster");
+  const referenceDataSheet = ss.getSheetByName("Reference Data");
+  const staffRosterSheet = ss.getSheetByName("Staff Roster");
+
+  const staffWithChildren = getStaffWithChildren(staffRosterSheet);
+  const meals = getColumnValues(referenceDataSheet, "A");
+  const staffRoles = getColumnValues(referenceDataSheet, "B");
+  const excludedStaff = getColumnValues(referenceDataSheet, "E").filter(String);
+  const validStaffForDuties = staffWithChildren.filter(
+    (staff) =>
+      !excludedStaff.includes(staff.name) &&
+      !getColumnValues(referenceDataSheet, "F")
+        .filter(String)
+        .includes(staff.name)
+  );
+
+  populateStaffDutyRoster(
+    staffDutyRosterSheet,
+    meals,
+    staffRoles,
+    validStaffForDuties
+  );
+}
+
+function runPopulatePatrolDutyRosters() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const patrolRosterSheet = ss.getSheetByName("Patrol Roster");
+  const referenceDataSheet = ss.getSheetByName("Reference Data");
+  const patrolNames = getColumnValues(referenceDataSheet, "G").filter(String);
+  const meals = getColumnValues(referenceDataSheet, "A");
+  const scoutRoles = getColumnValues(referenceDataSheet, "C");
+  const staffRoles = getColumnValues(referenceDataSheet, "B");
+
+  populatePatrolDutyRosters(
+    patrolNames,
+    patrolRosterSheet,
+    meals,
+    scoutRoles,
+    staffRoles
+  );
 }
